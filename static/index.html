@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no">
+    <title>OSC Sustain Pedal</title>
+    <style>
+      body {
+        margin: 0;
+          -webkit-touch-callout: none; /* iOS Safari */
+            -webkit-user-select: none; /* Safari */
+             -khtml-user-select: none; /* Konqueror HTML */
+               -moz-user-select: none; /* Old versions of Firefox */
+                -ms-user-select: none; /* Internet Explorer/Edge */
+                    user-select: none; /* Non-prefixed version, currently
+                                          supported by Chrome, Edge, Opera and Firefox */
+      }
+    </style>
+    <script type="text/javascript" src="static/socket.io.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const url = "http://" + document.domain + ":" + location.port + "/ws";
+        const socket = io.connect(url);
+
+        const states_colors = {
+          "waiting":   "#ffff00",
+          "ready_off": "#00ff00",
+          "ready_on":  "#007700",
+          "lost":      "#ff0000",
+          "stopped":   "#777777",
+          "error":     "#ff7700",
+        }
+        const server_states = new Set(["ready_off", "ready_on", "stopped", "error"]);
+        const final_states = new Set(["lost", "stopped", "error"]);
+        const timeout_interval_ms = 1000;
+
+        let state = "waiting";
+        let timeout = null;
+        let pressed = false;
+
+        function updateUI() {
+          color = states_colors[state];
+          if (color == null) {
+            color = "#ff00ff";
+          }
+          document.body.style.backgroundColor = color;
+        }
+  
+        function setSustain(new_pressed) {
+          new_pressed = !!new_pressed;
+          if (new_pressed == pressed) {
+            return;
+          }
+          pressed = new_pressed;
+          next_state = pressed ? "ready_on" : "ready_off";
+          socket.emit("sustain", {pressed: pressed, next_state: next_state});
+          if (timeout != null) {
+            clearTimeout(timeout);
+          }
+          timeout = setTimeout(() => {
+            if (!final_states.has(state)) {
+              state = "error";
+              updateUI();
+            }
+          }, timeout_interval_ms);
+        }
+
+        addEventListener("mousedown", () => setSustain(true));
+        addEventListener("mouseup", () => setSustain(false));
+
+        function handleTouch(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          setSustain(e.touches.length > 0);
+          return false;
+        }
+
+        ["touchstart", "touchmove", "touchcancel", "touchend"]
+          .map(event_type => addEventListener(event_type, handleTouch, false));
+  
+        socket.on("state", server_state => {
+          [server_state] = server_state;
+          console.log(state, server_state);
+          if (server_state == "ready") {
+            server_state = "ready_off";
+          }
+          if (!server_states.has(server_state)) {
+            server_state = "error";
+          }
+          if (!final_states.has(state)) {
+            if (timeout != null) {
+              clearTimeout(timeout);
+              timeout = null;
+            }
+            state = server_state;
+            updateUI();
+          }
+          console.log(state);
+        });
+      });
+
+      updateUI();
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
